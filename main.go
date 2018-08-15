@@ -12,8 +12,6 @@ import (
 	"strings"
 )
 
-const logFile = "/var/log/mkv2mp4.log"
-
 type worker struct {
 	work      <-chan string
 	ctx       context.Context
@@ -55,6 +53,8 @@ func main() {
 	recurse := flag.Bool("r", false, "search directory recursively")
 	verbose := flag.Bool("v", false, "verbose")
 	workers := flag.Int("c", 1, "number of concurrent conversions")
+	logFileLoc := flag.String("l", "", "location for file logging")
+
 	flag.Parse()
 
 	if *dir == "" && *file == "" {
@@ -65,18 +65,39 @@ func main() {
 		*workers = 1
 	}
 
-	logFile, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE, os.ModeAppend)
-	if err != nil {
-		log.Fatal(err)
+	// setup info logger
+	var (
+		logOut  io.Writer
+		logFile *os.File
+		err     error
+	)
+	if *logFileLoc != "" {
+		logFile, err = os.OpenFile(*logFileLoc, os.O_RDWR|os.O_CREATE, os.ModeAppend)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer logFile.Close()
+		logOut = logFile
 	}
-	defer logFile.Close()
 
-	var logOut io.Writer = logFile
 	if *verbose {
-		logOut = io.MultiWriter(logOut, os.Stdout)
+		if logOut == nil {
+			logOut = os.Stdout
+		} else {
+			logOut = io.MultiWriter(logOut, os.Stdout)
+		}
+	}
+	if logOut == nil {
+		logOut = ioutil.Discard
 	}
 	logger := log.New(logOut, "", log.LstdFlags)
-	errLogger := log.New(io.MultiWriter(logFile, os.Stderr), "", log.LstdFlags)
+
+	// setup error logger
+	var logOutErr io.Writer = os.Stderr
+	if logFile != nil {
+		logOutErr = io.MultiWriter(logOut, logFile)
+	}
+	errLogger := log.New(logOutErr, "", log.LstdFlags)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -107,8 +128,7 @@ func main() {
 		}
 	}
 	if err != nil {
-		log.SetOutput(io.MultiWriter(logFile, os.Stderr))
-		log.Fatal(err)
+		errLogger.Fatal(err)
 	}
 }
 
