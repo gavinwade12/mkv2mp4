@@ -118,7 +118,7 @@ func main() {
 	if *dir != "" {
 		err = convertDirectory(*dir, *recurse, work)
 		if err != nil {
-			log.Fatal(err)
+			errLogger.Fatal(err)
 		}
 	} else {
 		if !strings.HasSuffix(*file, ".mkv") {
